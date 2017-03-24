@@ -1,0 +1,88 @@
+// 2.4Car.cpp : Defines the entry point for the console application.
+//
+
+#include "stdafx.h"
+#include<opencv2/legacy/blobtrack.hpp>
+#include "opencv2/core/core_c.h"
+#include<iostream>  
+#include <opencv2/core/core.hpp>  
+#include <opencv2/highgui/highgui.hpp>  
+#include <stdio.h>
+#include <highgui.h>
+#include<cv.h>
+
+class realFGDetector :public CV_EXPORTS CvFGDetector{
+public :
+	realFGDetector();//构造函数，初始化
+	MyFGDetector(double alpha, double threshold);
+	~realFGDetector();
+
+	IplImage* GetMask();
+	void Process(IplImage* pFrame);
+	CvHistogram* Getthist();
+	void HistProcess(CvMat* HistoMat);
+	int OSTUthred(CvHistogram*Histogram1);
+
+	void Release();
+protected:
+	int frameNum;//视屏帧计数
+	double alpha;//背景图像权值更新
+	double threshold;//二值化阀值
+	CvHistogram* MyHistogram;//创建直方图
+	IplImage*pFrame;//当前帧图像8位3通道
+	IplImage*pFGMask;//前景图像
+	IplImage*pBKMask;//输出的背景图像
+	IplImage*frame;
+	IplImage*frame1;//输出的背景检测图像
+	CvMat*pFrameMat;//当前帧转换而成的32位浮点单通道矩阵
+	CvMat*pFGMat;//前景图
+	CvMat*pBkfirstMat;
+	CvMat*pBkMat;//背景图
+	CvMat*pBKTempMat;
+	CvHistogram*Histogram1;
+	IplImage* HistoImage;
+	void Create(double alpha, double threshold);
+};
+void realFGDetector::Process(IplImage*pFrame)
+
+{
+	int HistogramBins = 256;
+	float HistogramRange1[2] = { 0, 255 };
+	float *HistogramRange[1] = { &HistogramRange1[0] };
+	if (frameNum == 0)
+	{
+		pFGMask = cvCreateImage(cvGetSize(pFrame), IPL_DEPTH_8U, 1);
+		pBKMask = cvCreateImage(cvGetSize(pFrame), IPL_DEPTH_8U, 1);
+		frame = cvCreateImage(cvGetSize(pFrame), IPL_DEPTH_8U, 1);
+		frame1 = cvCreateImage(cvGetSize(pFrame), IPL_DEPTH_8U, 1);
+		pBkMat = cvCreateMat(pFrame->height, pFrame->width, CV_32FC1);
+		pFGMat = cvCreateMat(pFrame->height, pFrame->width, CV_32FC1);
+		pFrameMat = cvCreateMat(pFrame->height, pFrame->width, CV_32FC1);
+		pBKTempMat = cvCreateMat(pFrame->height, pFrame->width, CV_32FC1);
+		pBkfirstMat = cvCreateMat(pFrame->height, pFrame->width, CV_32FC1);
+		cvSetZero(pBkfirstMat);
+
+		HistoImage = cvCreateImage(cvGetSize(pFrame), IPL_DEPTH_8U, 1);
+		CvHistogram *MyHistogram = cvCreateHist(1, &HistogramBins, CV_HIST_ARRAY, HistogramRange);
+		if (!pFGMask || !pBkMat || !pFrameMat || !pBKMask){//或运算判断 初始化不成功的处理
+		{
+			fprintf(stderr, "can not alloe memeory.\n");//By default, standard input is read from the keyboard, while standard output and standard error are printed to the screen
+			return;
+		}
+		cvCvtColor(pFrame, pFGMask, CV_RGB2GRAY);
+		cvCvtColor(pFrame, pBKMask, CV_BGR2GRAY);
+		cvConvert(pFGMask, pFrameMat);//convert src to dst
+		cvConvert(pFGMask, pFGMat);
+		cvConvert(pBKMask,pBkMat)
+		
+	}
+	cvCvtColor(pFrame，pFGMask, CV_BGR2GRAY);
+
+		
+
+}
+int _tmain(int argc, _TCHAR* argv[])
+{
+	return 0;
+}
+
