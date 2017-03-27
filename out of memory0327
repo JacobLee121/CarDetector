@@ -1,0 +1,235 @@
+// 2.4Car.cpp : Defines the entry point for the console application.
+//
+
+#include "stdafx.h"
+#include<opencv2/legacy/blobtrack.hpp>
+#include "opencv2/core/core_c.h"
+#include"opencv2/core/types_c.h"
+#include<iostream>  
+#include <opencv2/core/core.hpp>  
+#include <opencv2/highgui/highgui.hpp>  
+#include <stdio.h>
+#include <highgui.h>
+#include<cv.h>
+#include <cxcore.h>
+
+
+using namespace std;
+using namespace cv;
+class MyFGDetector :public CV_EXPORTS CvFGDetector{
+public:
+	MyFGDetector()=default;//构造函数，初始化
+	MyFGDetector(double alpha, double threshold);
+	
+	int CvFGDetector();
+	IplImage* GetMask();
+	
+	/* Process current image: */
+	 void Process(IplImage* pImg);
+	/* Release foreground detector: */
+	 void Release();
+
+	//virtual IplImage* GetMask();
+	//virtual void Process(IplImage* pFrame);
+	CvHistogram* Getthist();//???
+	void HistProcess(CvMat* HistoMat);//
+	int OSTUthred(CvHistogram*Histogram1);
+	//virtual void Release();
+	~MyFGDetector()=default;
+protected:
+	int frameNum;//
+	double alpha;//背景图像权值更新
+	double threshold;//二值化阀值
+	CvHistogram* MyHistogram;//创建直方图
+	IplImage*pFrame;//当前帧图像8位3通道
+	IplImage*pFGMask;//前景图像
+	IplImage*pBKMask;//输出的背景图像
+	IplImage*frame;
+	IplImage*frame1;//输出的背景检测图像
+	CvMat*pFrameMat;//当前帧转换而成的32位浮点单通道矩阵
+	CvMat*pFGMat;//前景图32位浮点单通道矩阵
+	CvMat*pBkfirstMat;
+	CvMat*pBkMat;//背景图32位浮点单通道矩阵
+	CvMat*pBKTempMat;
+	CvHistogram*Histogram1;
+	IplImage* HistoImage;
+	void Create(double alpha, double threshold);
+};
+IplImage*MyFGDetector::GetMask()
+{
+	return pFGMask;
+}
+void MyFGDetector::Release(){  cvReleaseImage(&frame); }
+//前景检测处理
+void MyFGDetector::Process(IplImage*pFrame)
+{
+
+	int HistogramBins = 256;
+	float HistogramRange1[2] = { 0, 255 };
+	float *HistogramRange[1] = { &HistogramRange1[0] };
+	if (frameNum == 0)
+	{
+		pFGMask = cvCreateImage(cvGetSize(pFrame), IPL_DEPTH_8U, 1);
+		pBKMask = cvCreateImage(cvGetSize(pFrame), IPL_DEPTH_8U, 1);
+		frame = cvCreateImage(cvGetSize(pFrame), IPL_DEPTH_8U, 1);
+		frame1 = cvCreateImage(cvGetSize(pFrame), IPL_DEPTH_8U, 1);
+		pBkMat = cvCreateMat(pFrame->height, pFrame->width, CV_32FC1);
+		pFGMat = cvCreateMat(pFrame->height, pFrame->width, CV_32FC1);
+		pFrameMat = cvCreateMat(pFrame->height, pFrame->width, CV_32FC1);
+		pBKTempMat = cvCreateMat(pFrame->height, pFrame->width, CV_32FC1);
+		pBkfirstMat = cvCreateMat(pFrame->height, pFrame->width, CV_32FC1);
+		cvSetZero(pBkfirstMat);
+
+		HistoImage = cvCreateImage(cvGetSize(pFrame), IPL_DEPTH_8U, 1);
+		MyHistogram = cvCreateHist(1, &HistogramBins, CV_HIST_ARRAY, HistogramRange);//创建1维直方图
+		if (!pFGMask || !pBkMat || !pFrameMat || !pBKMask)
+		{//或运算判断 初始化不成功的处理
+			fprintf(stderr, "can not alloe memeory.\n");//By default, standard input is read from the keyboard, while standard output and standard error are printed to the screen
+			return;
+		}
+		cvCvtColor(pFrame, pFGMask, CV_RGB2GRAY);
+		cvCvtColor(pFrame, pBKMask, CV_BGR2GRAY);
+		cvConvert(pFGMask, pFrameMat);//convert src to dst
+		cvConvert(pFGMask, pFGMat);
+		cvConvert(pBKMask, pBkMat);//mask to mat
+	}
+	cvCvtColor(pFrame, pFGMask, CV_RGB2GRAY);//present flame gray
+	cvConvert(pFGMask, pFrameMat);//gray mskt to mat
+	cvSmooth(pFrameMat, pFrameMat, CV_MEDIAN, 3, 0, 0);//median filter /* Smoothes array (removes noise) */    CV_BLUR_NO_SCALE =0,	CV_BLUR = 1,CV_GAUSSIAN = 2,CV_MEDIAN = 3,CV_BILATERAL = 4
+
+	if (frameNum < 50){
+		cvAddWeighted(pBkfirstMat, 1.0, pFrameMat, 0.02, 0.0, pBkfirstMat);///* dst = src1 * alpha + src2 * beta + gamma */
+	}
+	if (frameNum == 50){
+		cvCopy(pBkfirstMat, pBkMat);
+		cv::namedWindow("pBkMat");
+		//Mat RealpBKMat = Mat(pBkMat, true);
+		cvShowImage("pBkMat", pBkMat);
+
+	}
+	cvAbsDiff(pFrameMat, pBkMat, pFGMat);//* dst(x,y,c) = abs(src1(x,y,c) - src2(x,y,c)) */
+	//MyFGDetector::HistProcess(pFGMat);
+	//MyHistogram = Getthist();
+	threshold = MyFGDetector::OSTUthred(MyHistogram);
+	if (threshold < 20){
+		threshold = 20;
+	}
+	IplConvKernel * myModel;
+	myModel = cvCreateStructuringElementEx(5, 5, 2, 2, CV_SHAPE_RECT);//自定义5*5,参考点（3,3）的矩形模板 CV_SHAPE_RECT;CV_SHAPE_CROSS;CV_SHAPE_RECT;CV_SHAPE_ELLIPSE;CV_SHAPE_CUSTOM;
+	cvThreshold(pFGMat, pFGMask, threshold, 255.0, CV_THRESH_BINARY);//bianry the front pic
+	cvErode(pFGMask, pFGMask, myModel, 1);//the third parameter is the erode modle, by default is 3x3 rect . it can be redifined by iplconvkernel
+	cvDilate(pFGMask, pFGMask, myModel, 1);
+	if (frameNum > 50){
+		//cvRenewBKImage(pFGMat, pFrameMat, pBKTempMat);
+		cvRunningAvg(pBKTempMat, pBkMat, alpha, 0);/* Adds image to accumulator with weights: acc = acc*(1-alpha) + image*alpha */
+		frameNum++;
+	}
+}
+//临界阀值计算
+int MyFGDetector::OSTUthred(CvHistogram* MyHistogram){
+	int histArray[256];
+	for (int j = 0; j < 256; j++){
+		histArray[j] = cvQueryHistValue_1D(MyHistogram, j);//bins=j 的hist的value j点的纵坐标值
+	}
+	histArray[0] = 1;
+	float u0, u1;//c0,c1组的均值
+	float w0, w1;//c0,c1组产生的概率
+	int count0;//c0组的像素数目
+	int t, maxT;//阀值t以及记录方差最大值是的最佳阀值maxT
+	float devi, maxDevi = 0;//方差及最大方差
+	int i;
+	int sum = 0;//统计直方图中像素的数目存放在sum中
+	for (i = 0; i < 256; i++){
+		sum = sum + histArray[i];
+	}
+	for (t = 0; t < 256; t++){
+		u0 = 0;
+		count0 = 0;//计算阀值为t 时的c0的均值和产生的概率
+		for (i = 0; i <= t; i++){
+			u0 += i*histArray[i];
+			count0 += histArray[i];
+		}
+		u0 = u0 / count0;
+		w0 = (float)count0 / sum;
+
+		//计算阀值为t时的c1组的均值和概率
+		u1 = 0;
+		for (i = t + 1; i < 256; i++){
+			u1 += i*histArray[i];
+		}
+		//c0与c1组相熟之和为图像的总像素
+		u1 = u1 / (sum - count0);
+		w1 = 1 - w0;
+		devi = w0*w1*(u1 - u0)*(u1 - u0);
+		if (devi > maxDevi){
+			maxDevi = devi;
+			maxT = t;
+		}
+	}
+	return maxT;
+}
+
+
+
+	int _tmain(int argc, _TCHAR* argv[])
+{	
+	MyFGDetector MyFGDtector1;
+	CvCapture* capture = cvCreateFileCapture("E:\\6Machine Learning\\视频处理\\道路车辆监测视频\\高速公路IP高清摄像机拍摄效果_标清.flv");
+	IplImage* frame1;
+
+	while (1)
+
+	{
+
+		frame1 = cvQueryFrame(capture);
+
+		if (!frame1)   break;
+
+		cvShowImage("flv", frame1);
+
+		MyFGDtector1.Process(frame1);
+		//char   c = cvWaitKey(33);
+
+
+
+		//if (c == 27)   break;
+	}
+
+
+	//cv::VideoCapture capture("E:\\6Machine Learning\\视频处理\\道路车辆监测视频\\高速公路IP高清摄像机拍摄效果_标清.flv");//读取视频
+	////check if the video opened
+	//if (!capture.isOpened())
+	//	return -1;
+	////播放视屏，调节delay可以调节播放的速度
+	////get the frame rate
+	//double rate = capture.get(CV_CAP_PROP_FPS);
+	//bool stop(false);
+	//cv::Mat frame; //current video frame
+	////////////////////////////////////////////////////////////////////
+	////IplImage *FrameIpl;//转换图片格式
+	////FrameIpl = &IplImage(frame);
+	////MyFGDtector1.Process(FrameIpl);
+	///*cv::namedWindow("pBkMat");*/
+	////CvMat*RealpBkCvMat = MyFGDtector1.Process.pBKMat;//获取背景图
+	////Mat RealpBKMat = Mat(RealpBkCvMat, ture);
+	////cv::imshow("pBkMat", RealpBKMat);
+	///////////////////////////////////////////////////////////////////
+	//cv::namedWindow("Current Frame");
+	////delay between each frame in ms
+	////corresponds to vedio frame rate
+	//double delay = 1000.0 / rate;//1000情况下是正常播放，rate代表每秒的帧数，delay代表1000毫秒有多少个间隔
+	////for all frame in vedio
+	//while (!stop){
+	//	//read next frame if any
+	//	if (!capture.read(frame))
+	//		break;
+	//	cv::imshow("Current Frame", frame);
+	//	//introduce a delay
+	//	//or press key to stop
+	//	if (cv::waitKey(delay) > 0)//cv::waitKey只对窗口机制有效果如imshow或者namedwindow;等待delay时间期间如果有键按下结束返回，反之继续
+	//		stop = true;
+	//}
+
+	return 0;
+}
+
